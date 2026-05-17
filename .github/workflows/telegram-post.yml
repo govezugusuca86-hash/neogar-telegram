@@ -2,7 +2,7 @@ name: Telegram Scheduled Post
 
 on:
   schedule:
-    - cron: '0 4,6,8,10,12,14,16,18 * * *'
+    - cron: '0 4-20 * * *'
   workflow_dispatch:
 
 jobs:
