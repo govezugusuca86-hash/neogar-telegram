@@ -2,7 +2,7 @@ name: Telegram Scheduled Post
 
 on:
   schedule:
-    - cron: '0 4-20 * * *'
+    - cron: '0 * * * *'     # каждый час
   workflow_dispatch:
 
 jobs:
