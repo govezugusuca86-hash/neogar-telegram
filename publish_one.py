@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Публикует один пост из очереди в Telegram-канал."""
+"""Публикует один пост из очереди в Telegram-канал.
 
-import json, os, sys, requests, io
+Workflow запускается каждые 15 минут. Скрипт публикует пост,
+только если с момента последней публикации прошло >= MIN_INTERVAL_MIN.
+Это компенсирует задержки и пропуски GitHub Actions cron.
+"""
+
+import json, os, sys, requests
 from pathlib import Path
+from datetime import datetime, timezone
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = os.environ["CHANNEL_ID"]
+
+# Минимальный интервал между постами в минутах.
+# 25 = постинг раз в 30 минут (с запасом на задержки GitHub Actions).
+MIN_INTERVAL_MIN = 25
 
 POSTS_FILE = Path(__file__).parent / "posts" / "posts.json"
 PROGRESS_FILE = Path(__file__).parent / "posts" / "progress.json"
@@ -16,7 +26,7 @@ def load_progress():
     try:
         return json.loads(PROGRESS_FILE.read_text())
     except:
-        return {"done": []}
+        return {"done": [], "last_post_at": None}
 
 
 def save_progress(prog):
@@ -66,11 +76,23 @@ def publish(post):
 
 
 def main():
+    progress = load_progress()
+    now = datetime.now(timezone.utc)
+
+    # Проверка интервала: пропускаем запуск, если ещё рано.
+    last = progress.get("last_post_at")
+    if last:
+        last_dt = datetime.fromisoformat(last)
+        elapsed_min = (now - last_dt).total_seconds() / 60
+        if elapsed_min < MIN_INTERVAL_MIN:
+            print(f"Skip: только {elapsed_min:.1f} мин с прошлого поста (нужно {MIN_INTERVAL_MIN}).")
+            return
+        print(f"OK: прошло {elapsed_min:.1f} мин с прошлого поста.")
+
     posts = json.loads(POSTS_FILE.read_text())
     posts.sort(key=lambda x: x["order"])
 
-    progress = load_progress()
-    done = set(progress["done"])
+    done = set(progress.get("done", []))
     remaining = [p for p in posts if p["id"] not in done]
 
     if not remaining:
@@ -83,8 +105,9 @@ def main():
 
     ok = publish(post)
     if ok:
-        print("OK")
-        progress["done"].append(post["id"])
+        print("Published OK")
+        progress.setdefault("done", []).append(post["id"])
+        progress["last_post_at"] = now.isoformat()
         save_progress(progress)
     else:
         print("FAIL")
